@@ -1,0 +1,84 @@
+#!/usr/bin/env zsh
+
+# Zsh is required because the version of bash included with macOS is too old to support associative arrays
+# An associative array is used to hold the contents of the .ini file that stores the configurable items
+
+set -euo pipefail
+
+: ${DEBUG:=false}
+
+SCRIPTNAME=${0}
+[ ${DEBUG} = true ] && echo "\$SCRIPTNAME -> ${SCRIPTNAME}"
+SCRIPTPATH=${0:A:h}     # Absolute path resolving symlinks and removing command
+[ ${DEBUG} = true ] && echo "\$SCRIPTPATH -> ${SCRIPTPATH}"
+
+[ ${DEBUG} = true ] && echo
+
+usage () {
+  echo "Usage: [STACKAPIVERSION=11] ${SCRIPTNAME} <path_to_app>"
+  exit 1;
+}
+
+[ $# -ne 1 ] && { usage; }
+
+. "${SCRIPTPATH}/lib_appcast"
+. "${SCRIPTPATH}/lib_appcast_ini"
+
+# Generate build version and archive filename
+if [[ ${INI[AppCast_<server>_release_site_url]} =~ github.com ]]; then
+  ARCHIVE_FILENAME="v${SHORTVERSIONSTRING}.zip"
+else
+  ARCHIVE_FILENAME="${DISPLAYNAME}-v${SHORTVERSIONSTRING}+${VERSION}.zip"
+fi
+[ ${DEBUG} = true ] && echo "\$ARCHIVE_FILENAME -> ${ARCHIVE_FILENAME}"
+
+# This algorithm needs to be the same as in appcast.php. It needs to match the
+# directory structure on the server
+SECRET=$(echo -n "${DISPLAYNAME}${KEY}" | openssl dgst -md5);
+[ ${DEBUG} = true ] && echo "\$SECRET -> ${SECRET}"
+
+APPCAST_BASEURL="${APPCAST_BASEURL}${DISPLAYNAME}_${SECRET}/"
+[ ${DEBUG} = true ] && echo "\$APPCAST_BASEURL -> ${APPCAST_BASEURL}"
+APPCAST_URL="${APPCAST_BASEURL}${APPCAST_FILENAME}"
+if [[ ! ${INI[AppCast_<server>_release_site_url]} =~ github.com ]]; then
+  RELEASE_BASEURL="${RELEASE_BASEURL}${DISPLAYNAME}_${SECRET}/"
+fi
+[ ${DEBUG} = true ] && echo "\$RELEASE_BASEURL -> ${RELEASE_BASEURL}"
+RELEASE_URL="${RELEASE_BASEURL}${ARCHIVE_FILENAME}"
+[ ${DEBUG} = true ] && echo "\$RELEASE_URL -> ${RELEASE_URL}"
+if [[ ${INI[AppCast_<server>_release_site_url]} =~ github.com ]]; then
+  HTTPCODE=$(curl --silent --write-out %\{http_code\} --location "${RELEASE_URL}" --output "${ARCHIVE_FILENAME}")
+  if [[ ${HTTPCODE} == "404" ]]; then
+    echo "Failed to download archive."
+    [ -f "${ARCHIVE_FILENAME}" ] && { rm -f "${ARCHIVE_FILENAME}"; }
+    exit 4
+  fi
+fi
+
+# Calculate the size and signature
+SIZE=$(calculate_size "${ARCHIVE_FILENAME}")
+[ ${DEBUG} = true ] && echo "\$SIZE -> ${SIZE}"
+SIGNATURE=$(sign_archive "${ARCHIVE_FILENAME}" "${PRIVKEY}")
+[ ${DEBUG} = true ] && echo "\$SIGNATURE -> ${SIGNATURE}"
+[ -n "${#SIGNATURE}" ] || { echo "Unable to load signing private key with name \"${PRIVKEY}\""; exit 5; }
+
+# Create the appcast
+[ -f "${APPCAST_FILENAME}" ] && { rm "${APPCAST_FILENAME}"; }
+APPCAST=$(create_appcast "${NAME}" "${SHORTVERSIONSTRING}" "${VERSION}" "${DESCRIPTION}" "${APPCAST_URL}" "${INFO_URL}" "${RELEASE_URL}" "${SIZE}" "${SIGNATURE}")
+[ ${DEBUG} = true ] && echo "\$APPCAST -> ${APPCAST}"
+echo "${APPCAST}" > "${APPCAST_FILENAME}"
+
+[ ${DEBUG} = true ] && echo
+
+if [[  ${INI[AppCast_<server>_release_site_url]} =~ github.com ]]; then
+  if [ -f "${ARCHIVE_FILENAME}" ]; then
+    echo -n "Cleaning up ..."
+    rm -f "${ARCHIVE_FILENAME}"
+    echo " Done"
+  fi
+fi
+
+echo "The appcast (${APPCAST_FILENAME}) needs to get copied to \"${APPCAST_BASEURL}\"."
+
+# vim: set filetype=zsh:
+# vim: set shiftwidth=2 tabstop=2:

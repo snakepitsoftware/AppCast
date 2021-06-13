@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# shebang only included for use by code formatters and shellcheck
+
+# Although the shebang above says bash, this file is not bash compliant and will not work if sourced from a bash script.
+# Zsh is required because the version of bash included with macOS is too old to support associative arrays
+# An associative array is used to hold the contents of the .ini file that stores the configurable items
+
+# SC2034 - foo appears unused.
+
+fpath=( "${SCRIPTPATH}/functions" "${fpath[@]}" )
+autoload -Uz read-ini-file
+
+INIPATH=${0:A:h:h}
+[ ${DEBUG} = true ] && echo "\$INIPATH -> ${INIPATH}"
+
+declare -A INI
+# load appropriate appcast.ini
+if [ -f "${INIPATH}/appcast.local.ini" ]; then
+  read-ini-file "${INIPATH}/appcast.local.ini" INI AppCast_
+else
+  read-ini-file "${INIPATH}/appcast.ini" INI AppCast_
+fi
+
+if [ ${DEBUG} = true ]; then
+  for key val in "${(@kv)INI}"; do
+    echo "\$INI[$key] -> $val"
+  done
+fi
+
+# shellcheck disable=SC2034
+KEY=${INI[AppCast_<appcast>_key]}
+[ ${DEBUG} = true ] && echo "\$KEY -> ${KEY}"
+
+APPCAST_BASEPATH=${INI[AppCast_<server>_appcast_base_path]}${STACKAPIVERSION}/
+[ ${DEBUG} = true ] && echo "\$APPCAST_BASEPATH -> ${APPCAST_BASEPATH}"
+# shellcheck disable=SC2034
+APPCAST_BASEURL=${INI[AppCast_<server>_appcast_site_url]}${APPCAST_BASEPATH}
+[ ${DEBUG} = true ] && echo "\$APPCAST_BASEURL -> ${APPCAST_BASEURL}"
+if [[ ! ${INI[AppCast_<server>_release_site_url]} =~ github.com ]] then
+  RELEASE_BASEPATH=${INI[AppCast_<server>_release_base_path]}${STACKAPIVERSION}/
+else
+  RELEASE_BASEPATH=$(basename "${APPPATH}")/${INI[AppCast_<server>_release_base_path]}
+fi
+[ ${DEBUG} = true ] && echo "\$RELEASE_BASEPATH -> ${RELEASE_BASEPATH}"
+# shellcheck disable=SC2034
+RELEASE_BASEURL=${INI[AppCast_<server>_release_site_url]}${RELEASE_BASEPATH}
+[ ${DEBUG} = true ] && echo "\$RELEASE_BASEURL -> ${RELEASE_BASEURL}"
+
+[ ${DEBUG} = true ] && echo
+
+return 0
+
+# vim: set filetype=zsh:
+# vim: set shiftwidth=2 tabstop=2:

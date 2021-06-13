@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+# client_test.sh https://www.acmewidgets.com/appcast/appcast.php NewWidget
+
+#wget --no-check-certificate -U "${2}/1.0.0-b15 Sparkle/2865" ${1}?StackAPIVersion=11
+curl --include --location --insecure --user-agent "${2}/1.0.0-b15 Sparkle/2865" "${1}?StackAPIVersion=11"
+
+# vim: set filetype=bash:
+# vim: set shiftwidth=2 tabstop=2:

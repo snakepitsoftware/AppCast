@@ -1,0 +1,228 @@
+#!/usr/bin/env bash
+# shebang only included for use by code formatters and shellcheck
+
+# SC2034 - foo appears unused.
+# SC2120 - foo references arguments, but none are ever passed.
+
+pushd () {
+  builtin pushd "$@" > /dev/null
+}
+
+# shellcheck disable=SC2120
+popd () {
+  builtin popd "$@" > /dev/null
+}
+
+# Option A : This isn't perfect, but it seems to be the direction that a lot of people have chosen to go.
+#   - It doesn't solve the problem of a branch not being committed.
+#   - It doesn't solve the problem of multiple committers and branches being out of date.
+#   - It doesn't solve the problem of modifying a tag post release to resolve critical bugs.
+#bump_build_version () {
+#  local APPPATH=${1}
+#  local APPNAME=${2}
+#  local VERSION=${3}
+#
+#  pushd ${APPPATH}/${APPNAME}
+#  VERSION=$(git rev-list HEAD --count)
+#  popd
+#
+#  defaults write "${APPPATH}/${APPNAME}/Contents/Info.plist" CFBundleVersion ${VERSION}
+#
+#  echo VERSION
+#}
+
+# Option B :
+#   - build version grows really quick, even when not being used
+#   - kept somewhat shorter by storing DAY0 time stamp in the plist
+#bump_build_version () {
+#  local APPPATH=${1}
+#  local APPNAME=${2}
+#  local VERSION=${3}
+#
+#  DAY0=$(defaults read "${APPPATH}/${APPNAME}/Contents/Info.plist" CFBuildVersion)
+#  NOW=$(LC_TIME=en_US date +"%s")
+#  VERSION=$((NOW - DAY0))
+#
+#  defaults write "${APPPATH}/${APPNAME}/Contents/Info.plist" CFBundleVersion ${VERSION}
+#
+#  echo VERSION
+#}
+
+# Option C :
+#   - external script called bump_build_version to increase the build version
+#   - more manual process
+#   - more control over the process
+bump_build_version () {
+  local APPPATH=${1}
+  local APPNAME=${2}
+  local VERSION=${3}
+
+  VERSION=$((VERSION+1))
+
+  defaults write "${APPPATH}/${APPNAME}/Contents/Info.plist" CFBundleVersion "${VERSION}"
+
+  echo "${VERSION}"
+}
+
+# Create the appcast
+# leave the initial tabs in, heredocs that use <<- allow indentation using tabs and will strip the tabs back out on
+# there own.
+create_appcast () {
+  local NAME=${1}
+  local SHORTVERSIONSTRING=${2}
+  local VERSION=${3}
+  local DESCRIPTION=${4}
+  local APPCAST_URL=${5}
+  local INFO_URL=${6}
+  local DOWNLOAD_URL=${7}
+  local SIZE=${8}
+  local SIGNATURE=${9}
+
+  local PUBDATE
+  PUBDATE=$(LC_TIME=en_US date +"%a, %d %b %G %T %z")
+
+  # The description tag can hold data to be displayed.
+  # This sort of worked, and jives with other documentation I was able to find,
+  # but I couldn't get a link to show, and if I just put a description in there
+  # it doesn't show at all.
+  #		        <![CDATA[<ul>
+  #		            <li>blah blah blah</li>
+  #		        </ul>]]>
+  # If I don't use the CDATA construct, I apparently can put Markdown in there,
+  # but this might just be a Stacks 3 thing, because I couldn't find anything
+  # talking about it.
+  #		        * Some great change
+  #
+  #		        [Full Release Notes](https://www.acmewidgets.com/somesuperspecialwidget/releasenotes.php)
+  # Vertical alignment seems off regardless of what I do.
+  cat <<- EOF
+		<?xml version="1.0" encoding="utf-8"?>
+		<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+		  <channel>
+		    <title>${NAME}</title>
+		    <link>${APPCAST_URL}</link>
+		    <description>Most recent changes with links to updates.</description>
+		    <language>en</language>
+		    <item>
+		      <title>${NAME} v${SHORTVERSIONSTRING} (${VERSION})</title>
+		      <description>${DESCRIPTION}</description>
+		      <link>${INFO_URL}</link>
+		      <sparkle:releaseNotesLink>${RELEASENOTES_URL}</sparkle:releaseNotesLink>
+		      <pubDate>${PUBDATE}</pubDate>
+		      <enclosure
+		        url="${DOWNLOAD_URL}"
+		        sparkle:version="${VERSION}"
+		        sparkle:shortVersionString="${SHORTVERSIONSTRING}"
+		        type="application/octet-stream"
+		        length="${SIZE}"
+		        sparkle:dsaSignature="${SIGNATURE}"
+		      />
+		    </item>
+		  </channel>
+		</rss>
+	EOF
+}
+
+sign_archive () {
+  local ARCHIVE=${1}
+  local PRIVKEY=${2}
+
+  openssl dgst -sha1 -binary < "${ARCHIVE}" | openssl dgst -dss1 -sign "${PRIVKEY}" | openssl enc -base64
+}
+
+calculate_size () {
+  local ARCHIVE_FILENAME=${1}
+
+  stat -Lf %z "${ARCHIVE_FILENAME}"
+}
+
+# Take care of copying/renaming/zipping, make sure to exclude the damn .DS_Store files
+create_archive () {
+  local ARCHIVE_FILENAME=${1}
+  local APPPATH=${2}
+  local APPNAME=${3}
+
+  local STACKNAME
+
+  if [[ ${APPNAME} =~ \.devstack/?$ ]]; then
+    STACKNAME=$(basename "${APPNAME}" .devstack)
+  elif [[ ${APPNAME} =~ \.stack/?$ ]]; then
+    STACKNAME=$(basename "${APPNAME}" .stack)
+  else
+    echo "Stack not found at ${APPPATH}!"
+    exit 4
+  fi
+
+  WD=$(pwd)
+  TMP=$(mktemp -d /tmp/temp.XXXXXX)
+  pushd "${TMP}"
+  echo "Copying files ..."
+  rsync -rv --exclude=.DS_Store "${APPPATH}/${APPNAME}/" "${STACKNAME}.stack/"
+  echo
+  echo "Archiving files ..."
+  zip -r "${WD}/${ARCHIVE_FILENAME}" . --exclude \*/.DS_Store
+  popd
+  rm -r "${TMP}"
+}
+
+: "${STACKAPIVERSION:=11}"
+[ ${DEBUG} = true ] && echo "\$STACKAPIVERSION -> ${STACKAPIVERSION}"
+
+KEYPATH=$(cd $(dirname ${0})/..; pwd)
+[ ${DEBUG} = true ] && echo "\$KEYPATH -> ${KEYPATH}"
+PRIVKEY=${KEYPATH}/dsa_priv.pem
+[ ${DEBUG} = true ] && echo "\$PRIVKEY -> ${PRIVKEY}"
+PUBKEY=${KEYPATH}/dsa_priv.pem
+[ ${DEBUG} = true ] && echo "\$PUBKEY -> ${PUBKEY}"
+
+# create keys if they don't exist
+if [ ! -f "${PUBKEY}" ] || [ ! -f "${PRIVKEY}" ]; then
+  rm -f "${PUBKEY}" "${PRIVKEY}"
+  echo "Creating keys ..."
+  "${SCRIPTPATH}/generate_keys" "${KEYPATH}"
+fi
+
+APPPATH=$(cd $(dirname ${1}); pwd)
+[ ${DEBUG} = true ] && echo "\$APPPATH -> ${APPPATH}"
+APPNAME=$(basename ${1})
+[ ${DEBUG} = true ] && echo "\$APPNAME -> ${APPNAME}"
+
+# shellcheck disable=SC2034
+APPCAST_FILENAME="appcast.xml"
+[ ${DEBUG} = true ] && echo "\$APPCAST_FILENAME -> ${APPCAST_FILENAME}"
+
+! [ -d "${APPPATH}/${APPNAME}" ] && { echo "${APPPATH}/${APPNAME} isn't a directory."; exit 2; }
+! [ -f "${APPPATH}/${APPNAME}/Contents/Info.plist" ] && { echo "No Info.plist file found."; exit 3; }
+
+# Get product links
+INFO_URL=$(defaults read "${APPPATH}/${APPNAME}/Contents/Info.plist" infoURL)
+[ ${DEBUG} = true ] && echo "\$INFO_URL -> ${INFO_URL}"
+RELEASENOTES_URL=${INFO_URL}releasenotes.php
+[ ${DEBUG} = true ] && echo "\$RELEASENOTES_URL -> ${RELEASENOTES_URL}"
+
+# Get version/build version
+VERSION=$(defaults read "${APPPATH}/${APPNAME}/Contents/Info.plist" CFBundleVersion)
+[ ${DEBUG} = true ] && echo "\$VERSION -> ${VERSION}"
+SHORTVERSIONSTRING=$(defaults read "${APPPATH}/${APPNAME}/Contents/Info.plist" CFBundleShortVersionString)
+[ ${DEBUG} = true ] && echo "\$SHORTVERSIONSTRING -> ${SHORTVERSIONSTRING}"
+
+# Get various names
+# shellcheck disable=SC2034
+DISPLAYNAME=$(defaults read "${APPPATH}/${APPNAME}/Contents/Info.plist" CFBundleDisplayName)
+[ ${DEBUG} = true ] && echo "\$DISPLAYNAME -> ${DISPLAYNAME}"
+NAME=$(defaults read "${APPPATH}/${APPNAME}/Contents/Info.plist" CFBundleName)
+[ ${DEBUG} = true ] && echo "\$NAME -> ${NAME}"
+
+#DESCRIPTION="### **What's new in this release**
+#We've made some improvements to ${NAME}, and we hope that you'll like what we've done.
+#
+#[Full Release Notes](${RELEASENOTES_URL})"
+DESCRIPTION=$("${SCRIPTPATH}/get_version_changes" "${APPPATH}/CHANGELOG.md" "${SHORTVERSIONSTRING}")
+[ ${DEBUG} = true ] && echo "\$DESCRIPTION -> ${DESCRIPTION}"
+
+[ ${DEBUG} = true ] && echo
+
+return 0
+
+# vim: set filetype=zsh:
+# vim: set shiftwidth=2 tabstop=2:

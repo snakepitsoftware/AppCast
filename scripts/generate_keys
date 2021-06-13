@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SCRIPTNAME=${0}
+
+usage () {
+  echo "Usage: ${SCRIPTNAME} <key_path>"
+  exit 1
+}
+
+[ $# -ne 1 ] && { usage; }
+
+for f in ${1}/dsa_priv.pem ${1}/dsa_pub.pem; do
+  if [ -e "$f" ]; then
+    echo "There's already a ${f} here! Move it aside or be more careful!"
+    exit 1
+  fi
+done
+
+openssl gendsa <(openssl dsaparam 4096) -out "${1}/dsa_priv.pem"
+chmod 0600 "${1}/dsa_priv.pem"
+openssl dsa -in "${1}/dsa_priv.pem" -pubout -out "${1}/dsa_pub.pem"
+
+echo
+echo "Generated private and public keys: dsa_priv.pem and dsa_pub.pem."
+echo "BACK UP YOUR PRIVATE KEY AND KEEP IT SAFE!"
+echo "If you lose it, your users will be unable to upgrade!"
+
+#open -R ${1}/dsa_priv.pem
+
+# vim: set filetype=bash:
+# vim: set shiftwidth=2 tabstop=2:

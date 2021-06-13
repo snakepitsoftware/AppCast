@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+
+#
+# Get changes related to specified version or most recent version
+#
+
+set -euo pipefail
+
+SCRIPTNAME=${0}
+
+usage () {
+  echo "Usage: ${SCRIPTNAME} <changelog> [<version>]"
+  exit 1
+}
+
+[ $# -lt 1 ] || [ $# -gt 2 ] && { usage; }
+[ ! -r "${1}" ] && { echo "${1} does not exist or is not readable"; echo; usage; }
+
+# Get the first line to print
+STR=$(grep -E -n '^## \[.*]' "${1}")
+if [ -z "${STR}" ]; then
+  echo "${1} does not appear to contain any properly formatted releases."
+  echo
+  usage
+else
+  if [ $# -eq 2 ]; then
+    # Version was specified
+    STR=$(echo "${STR}" | grep "\[${2}.*]")
+    if [ -z "${STR}" ]; then
+      echo 'Specified version not found.'
+      echo
+      usage
+    fi
+  else
+    # Version wasn't specified
+    STR=$(echo "${STR}" | grep -v '\[unreleased]')
+    if [ -z "${STR}" ]; then
+      echo 'Released version not found.'
+      echo
+      usage
+    fi
+  fi
+fi
+STARTLINE=$(($(echo "${STR}" | head -n 1 | cut -d: -f1)+1))
+
+# Get the last line to print
+ENDLINE=$(sed -n "${STARTLINE},\$p" "${1}" | grep -E -n '^## \[.*]') || true
+if [ -z "${ENDLINE}" ]; then
+  # No endline, version was last in file, set endline to end of file
+  ENDLINE='$'
+else
+  ENDLINE=$(echo "${ENDLINE}" | head -n 1 | cut -d: -f1)
+  ENDLINE=$((STARTLINE+ENDLINE-2))
+fi
+
+# Print it all out after stripping off leading and trailing blank lines
+if [[ "${ENDLINE}" == '$' ]]; then
+  OUTPUT=$(sed -n "${STARTLINE},${ENDLINE}p" "${1}")
+else
+  OUTPUT=$(sed -n "${STARTLINE},${ENDLINE}p;$((ENDLINE+1))q" "${1}")
+fi
+# Clean it up
+echo "${OUTPUT}" | sed '/./,$!d' | sed -e :a -e '/^\n*$/{$d;N;};/\n$/ba'
+
+# vim: set filetype=bash:
+# vim: set shiftwidth=2 tabstop=2:

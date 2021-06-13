@@ -1,6 +1,10 @@
 MIT License
 
-Copyright (c) 2021 Snakepit Software
+Portions copyright (©) 2020 Snakepit Software  
+Portions copyright (©) 2020 other project contributors
+
+<https://www.snakepitsoftware.com/projects/appcast/>  
+<https://github.com/snakepitsoftware/AppCast>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

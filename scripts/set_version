@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+: ${DEBUG:=false}
+
+SCRIPTNAME=${0}
+[ ${DEBUG} = true ] && echo "\$SCRIPTNAME -> ${SCRIPTNAME}"
+SCRIPTPATH=$(cd $(dirname ${0}); pwd; ) # Absolute path resolving symlinks and removing command
+[ ${DEBUG} = true ] && echo "\$SCRIPTPATH -> ${SCRIPTPATH}"
+
+[ ${DEBUG} = true ] && echo
+
+usage () {
+  echo "Usage: ${SCRIPTNAME} <path_to_app> [<shortversionstring>]"
+  exit 1
+}
+
+[ $# -lt 1 ] || [ $# -gt 2 ] && { usage; }
+
+. "${SCRIPTPATH}/lib_appcast"
+
+VERSION=$(bump_build_version "${APPPATH}" "${APPNAME}" "${VERSION}")
+[ ${DEBUG} = true ] && echo "\$VERSION -> ${VERSION}"
+
+if [ $# -eq 2 ]; then
+  defaults write "${APPPATH}/${APPNAME}/Contents/Info.plist" CFBundleShortVersionString "$2"
+  SHORTVERSIONSTRING="$2"
+fi
+[ ${DEBUG} = true ] && echo "\$SHORTVERSIONSTRING -> ${SHORTVERSIONSTRING}"
+
+# vim: set filetype=bash:
+# vim: set shiftwidth=2 tabstop=2:

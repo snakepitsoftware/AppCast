@@ -1,0 +1,10 @@
+# macOS BS
+**/.DS_Store
+
+# Temporary files created by these scripts
+**/*.zip
+**/*.xml
+**/*.pem
+
+# Localized copy
+appcast.local.ini

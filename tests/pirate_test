@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+# pirate_test.sh https://www.acmewidgets.com/appcast/appcast.php
+
+#wget --no-check-certificate ${1}/appcast/appcast.php?StackAPIVersion=11
+curl --include --location --insecure "${1}?StackAPIVersion=11"
+
+# vim: set filetype=bash:
+# vim: set shiftwidth=2 tabstop=2:
